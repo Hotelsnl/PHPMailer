@@ -493,6 +493,7 @@ class phpmailerTest extends PHPUnit_Framework_TestCase
             '"Doug "Ace" L."@iana.org',
             'Doug\ \"Ace\"\ L\.@iana.org',
             'hello world@iana.org',
+//            'helloworld@iana .org',
             'gatsby@f.sc.ot.t.f.i.tzg.era.l.d.',
             'test.iana.org',
             'test.@iana.org',
@@ -650,7 +651,7 @@ class phpmailerTest extends PHPUnit_Framework_TestCase
         $this->Mail->Body = 'Here is the text body';
         $this->Mail->Subject .= ': Plain + Multiple FileAttachments';
 
-        if (!$this->Mail->AddAttachment('test.png')) {
+        if (!$this->Mail->AddAttachment('../examples/images/phpmailer.png')) {
             $this->assertTrue(false, $this->Mail->ErrorInfo);
             return;
         }
@@ -730,46 +731,30 @@ EOT;
         $this->assertTrue($this->Mail->Send(), $this->Mail->ErrorInfo);
     }
 
+    /**
+     * Test simple message builder and html2text converters
+     */
     function test_MsgHTML() {
-        $message = <<<'EOT'
-<html>
-    <head>
-        <title>HTML email test</title>
-    </head>
-    <body>
-        <h1>PHPMailer does HTML!</h1>
-        <p>This is a <strong>test message</strong> written in HTML.<br>
-        Go to <a href="https://github.com/PHPMailer/PHPMailer/">https://github.com/PHPMailer/PHPMailer/</a>
-        for new versions of PHPMailer.</p>
-        <p>Thank you!</p>
-    </body>
-</html>
-EOT;
-        $this->Mail->MsgHTML($message);
-        $plainmessage = <<<'EOT'
-PHPMailer does HTML!
-        This is a test message written in HTML.
-        Go to https://github.com/PHPMailer/PHPMailer/
-        for new versions of PHPMailer.
-        Thank you!
-EOT;
+        $message = file_get_contents('../examples/contents.html');
+        $this->Mail->CharSet = 'utf-8';
+        $this->Mail->Body = '';
+        $this->Mail->AltBody = '';
+        $this->Mail->MsgHTML($message, '../examples');
+        $this->Mail->Subject .= ': MsgHTML';
 
-        $this->assertEquals($this->Mail->Body, $message, 'Body not set by MsgHTML');
-        $this->assertEquals($this->Mail->AltBody, $plainmessage, 'AltBody not set by MsgHTML');
+        $this->assertNotEmpty($this->Mail->Body, 'Body not set by MsgHTML');
+        $this->assertNotEmpty($this->Mail->AltBody, 'AltBody not set by MsgHTML');
+        $this->assertTrue($this->Mail->Send(), $this->Mail->ErrorInfo);
 
         //Again, using the advanced HTML to text converter
         $this->Mail->AltBody = '';
-        $this->Mail->MsgHTML($message, '', true);
+        $this->Mail->MsgHTML($message, '../examples', true);
+        $this->Mail->Subject .= ' + html2text advanced';
         $this->assertNotEmpty($this->Mail->AltBody, 'Advanced AltBody not set by MsgHTML');
 
-        //Make sure that changes to the original message are reflected when called again
-        $message = str_replace('PHPMailer', 'bananas', $message);
-        $plainmessage = str_replace('PHPMailer', 'bananas', $plainmessage);
-        $this->Mail->MsgHTML($message);
-        $this->assertEquals($this->Mail->Body, $message, 'Body not updated by MsgHTML');
-        $this->assertEquals($this->Mail->AltBody, $plainmessage, 'AltBody not updated by MsgHTML');
-
+        $this->assertTrue($this->Mail->Send(), $this->Mail->ErrorInfo);
     }
+
     /**
      * Simple HTML and attachment test
      */
@@ -799,9 +784,9 @@ EOT;
         $this->Mail->IsHTML(true);
 
         if (!$this->Mail->AddEmbeddedImage(
-            'test.png',
+            '../examples/images/phpmailer.png',
             'my-attach',
-            'test.png',
+            'phpmailer.png',
             'base64',
             'image/png'
         )
@@ -828,9 +813,9 @@ EOT;
         $this->Mail->IsHTML(true);
 
         if (!$this->Mail->AddEmbeddedImage(
-            'test.png',
+            '../examples/images/phpmailer.png',
             'my-attach',
-            'test.png',
+            'phpmailer.png',
             'base64',
             'image/png'
         )
@@ -889,7 +874,44 @@ EOT;
         }
     }
 
-    /**
+  /**
+   * iCal event test
+   */
+  function test_Ical()
+  {
+    $this->Mail->Body = 'This is the <strong>HTML</strong> part of the email.';
+    $this->Mail->AltBody = 'This is the text part of the email.';
+    $this->Mail->Subject .= ': iCal';
+    $this->Mail->IsHTML(true);
+    $this->BuildBody();
+    require_once '../extras/EasyPeasyICS.php';
+    $ICS = new EasyPeasyICS("PHPMailer test calendar");
+    $ICS->addEvent(
+      strtotime('tomorrow 10:00 Europe/Paris'),
+      strtotime('tomorrow 11:00 Europe/Paris'),
+      'PHPMailer iCal test',
+      'A test of PHPMailer iCal support',
+      'https://github.com/PHPMailer/PHPMailer'
+    );
+    $this->Mail->Ical = $ICS->render(false);
+    $this->assertTrue($this->Mail->Send(), $this->Mail->ErrorInfo);
+    $this->Mail->Body = 'Embedded Image: <img alt="phpmailer" src="cid:my-attach">' .
+      'Here is an image!</a>.';
+    $this->Mail->AltBody = 'This is the text part of the email.';
+    $this->Mail->Subject .= ': iCal + inline';
+    $this->Mail->IsHTML(true);
+    $this->Mail->AddEmbeddedImage(
+      '../examples/images/phpmailer.png',
+      'my-attach',
+      'phpmailer.png',
+      'base64',
+      'image/png'
+    );
+    $this->BuildBody();
+    $this->assertTrue($this->Mail->Send(), $this->Mail->ErrorInfo);
+  }
+
+  /**
      * Test sending multiple messages with separate connections
      */
     function test_MultipleSend()
@@ -968,6 +990,24 @@ EOT;
         $this->Mail->Subject = $subject . ': SMTP keep-alive 2';
         $this->assertTrue($this->Mail->Send(), $this->Mail->ErrorInfo);
         $this->Mail->SmtpClose();
+    }
+
+    /**
+     * Test SMTP host connections
+     */
+    function test_SmtpConnect()
+    {
+      $this->assertTrue($this->Mail->SmtpConnect(), 'SMTP single connect failed');
+      $this->Mail->SmtpClose();
+      $this->Mail->Host = "localhost:12345;10.10.10.10:54321";
+      $this->assertFalse($this->Mail->SmtpConnect(), 'SMTP bad multi-connect succeeded');
+      $this->Mail->SmtpClose();
+      $this->Mail->Host = "localhost:12345;10.10.10.10:54321;".$_REQUEST['mail_host'];
+      $this->assertTrue($this->Mail->SmtpConnect(), 'SMTP multi-connect failed');
+      $this->Mail->SmtpClose();
+      $this->Mail->Host = $_REQUEST['mail_host'];
+      //Need to pick a harmless option so as not cause problems of its own! socket:bind doesn't work with Travis-CI
+      $this->assertTrue($this->Mail->SmtpConnect(array('ssl' => array('verify_depth' => 10))), 'SMTP connect with options failed');
     }
 
     /**
@@ -1134,6 +1174,22 @@ EOT;
         $this->assertTrue($this->Mail->Send(), 'S/MIME signing failed');
         unlink($certfile);
         unlink($keyfile);
+    }
+
+    /**
+     * Test line break reformatting
+     */
+    function test_LineBreaks()
+    {
+      $unixsrc    = "Hello\nWorld\nAgain\n";
+      $macsrc     = "Hello\rWorld\rAgain\r";
+      $windowssrc = "Hello\r\nWorld\r\nAgain\r\n";
+      $mixedsrc   = "Hello\nWorld\rAgain\r\n";
+      $target     = "Hello\r\nWorld\r\nAgain\r\n";
+      $this->assertEquals($target, PHPMailer::NormalizeBreaks($unixsrc), 'UNIX break reformatting failed');
+      $this->assertEquals($target, PHPMailer::NormalizeBreaks($macsrc), 'Mac break reformatting failed');
+      $this->assertEquals($target, PHPMailer::NormalizeBreaks($windowssrc), 'Windows break reformatting failed');
+      $this->assertEquals($target, PHPMailer::NormalizeBreaks($mixedsrc), 'Mixed break reformatting failed');
     }
 
     /**
